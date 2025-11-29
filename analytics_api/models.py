@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 
 class Country(models.Model):
     name = models.CharField(max_length=100)
-    code = models.CharField(max_length=2, unique=True)  # e.g., 'ET'
+    code = models.CharField(max_length=2, unique=True)  # e.g., 'ET', 'US', 'GB'
 
 class Blog(models.Model):
     title = models.CharField(max_length=255)
@@ -12,7 +12,7 @@ class Blog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True, related_name='blogs')  # Blog's country
 
-class View(models.Model):
+class BlogView(models.Model):
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='views')
     viewer_country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True)
     viewed_at = models.DateTimeField(auto_now_add=True)
