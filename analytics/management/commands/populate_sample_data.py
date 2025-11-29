@@ -1,8 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from analytics.models import Country, Blog, BlogView
-from random import randint, choice
-from datetime import datetime, timedelta
+from random import choice
 
 class Command(BaseCommand):
     help = 'Populate sample data: 10 users, 5 countries, 50 blogs, 1000 blog views'
