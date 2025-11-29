@@ -23,7 +23,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         elif time_range == 'year':
             start_date = now - timedelta(days=365)
         if start_date:
-            return queryset.filter(created_at__gte=start_date)
+            return queryset.filter(viewed_at__gte=start_date)
         return queryset
 
     @action(detail=False, methods=['get'], url_path='blog-views')
@@ -122,16 +122,16 @@ class AnalyticsViewSet(viewsets.ViewSet):
 
         # trunc function
         if compare == "day":
-            trunc = TruncDay("created_at")
+            trunc = TruncDay("viewed_at")
             label_format = "%Y-%m-%d"
         elif compare == "week":
-            trunc = TruncWeek("created_at")
+            trunc = TruncWeek("viewed_at")
             label_format = "Week %U %Y"
         elif compare == "year":
-            trunc = TruncYear("created_at")
+            trunc = TruncYear("viewed_at")
             label_format = "%Y"
         else:  # month as default
-            trunc = TruncMonth("created_at")
+            trunc = TruncMonth("viewed_at")
             label_format = "%B %Y"
 
         # Single-query total views per period
