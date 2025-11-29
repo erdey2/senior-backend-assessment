@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
-from analytics_api.models import Country, Blog, BlogView
+from analytics.models import Country, Blog, BlogView
 from random import randint, choice
 from datetime import datetime, timedelta
 
