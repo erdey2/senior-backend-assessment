@@ -1,18 +1,13 @@
 from .base import *
-from decouple import config, Csv
+import os
+import dj_database_url
 
 # Production overrides
-DEBUG = False
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv)
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-# Production database should be configured via environment variables
+ALLOWED_HOSTS = ["your-app-name.onrender.com"]
+
+# Production database on neon
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST'),
-        'PORT': config('DB_PORT', cast=int),
-    }
+    'default': dj_database_url.parse(os.getenv("DATABASE_URL"))
 }
