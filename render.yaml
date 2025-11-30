@@ -11,4 +11,4 @@ services:
           name: blog
           property: connectionString
 
-    postDeployCommand: python manage.py migrate
+    postDeployCommand: python manage.py migrate --noinput
