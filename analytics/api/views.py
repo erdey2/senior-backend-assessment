@@ -24,10 +24,12 @@ class AnalyticsViewSet(viewsets.ViewSet):
             "month": timedelta(days=30),
             "year": timedelta(days=365),
         }
-        if time_range in delta_map:
-            start = now - delta_map[time_range]
-            return queryset.filter(viewed_at__gte=start)
-        return queryset
+
+        if time_range not in delta_map:
+            return queryset  # ignore invalid ranges
+
+        start = now - delta_map[time_range]
+        return queryset.filter(viewed_at__gte=start)
 
     # BLOG-VIEWS API
     @action(detail=False, methods=['get'], url_path='blog-views')
@@ -36,13 +38,15 @@ class AnalyticsViewSet(viewsets.ViewSet):
         time_range = request.GET.get('range', 'month')
         filters = request.GET.get("filters", None)
 
-        qs = BlogView.objects.select_related("blog", "blog__author", "blog__country")
+        qs = BlogView.objects.select_related("blog", "blog__author", "blog__country").filter(blog__isnull=False)
+
         if filters:
             qs = apply_filters(qs, filters)
+
         qs = self._apply_time_range(qs, time_range)
 
         if object_type == "country":
-            qs = qs.values("blog__country__name").annotate(
+            qs = qs.filter(blog__country__isnull=False).values("blog__country__name").annotate(
                 number_of_blogs=Count("blog", distinct=True),
                 total_views=Count("id")
             )
@@ -55,7 +59,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
             ]
 
         elif object_type == "user":
-            qs = qs.values("blog__author__username").annotate(
+            qs = qs.filter(blog__author__isnull=False).values("blog__author__username").annotate(
                 number_of_blogs=Count("blog", distinct=True),
                 total_views=Count("id")
             )
@@ -66,10 +70,12 @@ class AnalyticsViewSet(viewsets.ViewSet):
                     "z": row["total_views"]
                 } for row in qs
             ]
+
         else:
             return Response({"error": "Invalid object_type. Use: country or user"}, status=400)
 
-        serializer = BlogViewsAnalyticsSerializer(data, many=True)
+        serializer = BlogViewsAnalyticsSerializer(data=data, many=True)
+        serializer.is_valid(raise_exception=True)
         return Response(serializer.data)
 
     # TOP ANALYTICS API
@@ -79,13 +85,15 @@ class AnalyticsViewSet(viewsets.ViewSet):
         time_range = request.GET.get('range', 'month')
         filters = request.GET.get("filters", None)
 
-        qs = BlogView.objects.select_related("blog", "blog__author", "blog__country")
+        qs = BlogView.objects.select_related("blog", "blog__author", "blog__country").filter(blog__isnull=False)
+
         if filters:
             qs = apply_filters(qs, filters)
+
         qs = self._apply_time_range(qs, time_range)
 
         if top_type == 'user':
-            qs = qs.values("blog__author__username").annotate(
+            qs = qs.filter(blog__author__isnull=False).values("blog__author__username").annotate(
                 blogs_count=Count("blog", distinct=True),
                 views_count=Count("id")
             ).order_by("-views_count")[:10]
@@ -96,7 +104,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
             ]
 
         elif top_type == 'country':
-            qs = qs.values("blog__country__name").annotate(
+            qs = qs.filter(blog__country__isnull=False).values("blog__country__name").annotate(
                 blogs_count=Count("blog", distinct=True),
                 views_count=Count("id")
             ).order_by("-views_count")[:10]
@@ -116,7 +124,8 @@ class AnalyticsViewSet(viewsets.ViewSet):
                 for row in qs
             ]
 
-        serializer = TopAnalyticsSerializer(data, many=True)
+        serializer = TopAnalyticsSerializer(data=data, many=True)
+        serializer.is_valid(raise_exception=True)
         return Response(serializer.data)
 
     # PERFORMANCE ANALYTICS API
@@ -126,7 +135,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         user_id = request.GET.get("user")
         filters = request.GET.get("filters")
 
-        qs = BlogView.objects.select_related("blog", "blog__author")
+        qs = BlogView.objects.select_related("blog", "blog__author").filter(blog__isnull=False)
         if user_id:
             qs = qs.filter(blog__author_id=user_id)
         if filters:
@@ -162,5 +171,6 @@ class AnalyticsViewSet(viewsets.ViewSet):
                 "z": round(growth, 2),
             })
 
-        serializer = PerformanceAnalyticsSerializer(output, many=True)
+        serializer = PerformanceAnalyticsSerializer(data=output, many=True)
+        serializer.is_valid(raise_exception=True)
         return Response(serializer.data)
