@@ -21,13 +21,34 @@ Optimized single-query aggregation
 
 Dynamic filters for advanced querying
 
-Time-range support: day, week, month, and year
+Time-range support: day, week, month, year
 
 Growth and decline percentage calculations
 
 Clean DRF ViewSet-based structure
 
-Installation Guide
+Test Deployed API
+
+The deployed API is available here:
+https://blog-analysis.onrender.com
+
+Example requests:
+
+Blog Views Analytics
+curl -X GET "https://blog-analysis.onrender.com/analytics/blog-views/?object_type=user&range=month"
+
+Top Analytics
+curl -X GET "https://blog-analysis.onrender.com/analytics/top/?top=user&range=month"
+
+Performance Analytics
+curl -X GET "https://blog-analysis.onrender.com/analytics/performance/?compare=month"
+
+
+Dynamic filters can be applied using the filters query parameter:
+
+curl -X GET "https://blog-analysis.onrender.com/analytics/blog-views/?filters={'blog__country__name':'Ethiopia'}"
+
+Installation Guide (Local)
 
 Follow these steps to run the project locally.
 
@@ -49,8 +70,8 @@ Create a .env file:
 
 SECRET_KEY=your-secret-key
 DEBUG=True
-
 DATABASE_URL=postgres://username:password@localhost:5432/blogdb
+
 
 Or manually configure settings.py.
 
@@ -64,32 +85,33 @@ API Endpoints
 
 All analytics endpoints are served under the /analytics/ route.
 
-Blog Views Analytics
+1. Blog Views Analytics
 
-Provides aggregated blog and view counts grouped by a specified object type.
+Aggregated blog and view counts grouped by a specified object type (country or user).
 
-Top Analytics
+2. Top Analytics
 
-Returns top 10 records ranked by view count, grouped by user, country, or by individual blog.
+Returns top 10 records ranked by view count, grouped by user, country, or individual blog.
 
-Performance Analytics
+3. Performance Analytics
 
-Returns time-series performance data including blog count, total views, and growth percentage between periods.
+Returns time-series performance data including:
+
+Blog count
+
+Total views
+
+Growth percentage between periods
 
 Dynamic Filters
 
-The API supports dynamic filter rules.
-Supported operators include equality, inequality, inclusion, exclusion, greater-than, and less-than.
+Supports dynamic filter rules.
+Supported operators: eq, neq, in, nin, gt, lt
 
-Filters follow a consistent format specifying:
+Filter format:
 
-the field
-
-the operator
-
-the value
-
-Project Structure
-
-The project is divided into apps that handle blogs, blog views, and analytics.
-The analytics module includes views, serializers, and reusable filter utilities.
+{
+  "field": "blog__author__username",
+  "operator": "eq",
+  "value": "user1"
+}
