@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: blog-analytics-api
+    env: python
+    buildCommand: pip install -r requirements/requirements_prod.txt
+    startCommand: gunicorn project_config.wsgi:application
+
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: blog
+          property: connectionString
+
+    postDeployCommand: python manage.py migrate
