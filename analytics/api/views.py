@@ -1,9 +1,11 @@
+from django.utils import timezone
+from datetime import timedelta
 from django.db.models import Count
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear
-from rest_framework import status, viewsets
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from datetime import datetime, timedelta
+
 from ..models import Blog, BlogView
 from .serializers import PerformanceAnalyticsSerializer, BlogViewsAnalyticsSerializer, TopAnalyticsSerializer
 from .filters import apply_filters
@@ -12,7 +14,7 @@ from .filters import apply_filters
 class AnalyticsViewSet(viewsets.ViewSet):
 
     def _apply_time_range(self, queryset, time_range):
-        now = datetime.now()
+        now = timezone.now()
         if time_range == "day":
             start = now - timedelta(days=1)
         elif time_range == "week":
