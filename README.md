@@ -30,7 +30,7 @@ Clean DRF ViewSet-based structure
 Test Deployed API
 
 The deployed API is available here:
-https://blog-analysis.onrender.com
+https://blog-analysis.onrender.com/analytics/
 
 Example requests:
 
