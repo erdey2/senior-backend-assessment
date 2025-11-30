@@ -13,105 +13,136 @@ class AnalyticsViewSet(viewsets.ViewSet):
 
     def _apply_time_range(self, queryset, time_range):
         now = datetime.now()
-        start_date = None
-        if time_range == 'day':
-            start_date = now - timedelta(days=1)
-        elif time_range == 'week':
-            start_date = now - timedelta(days=7)
-        elif time_range == 'month':
-            start_date = now - timedelta(days=30)
-        elif time_range == 'year':
-            start_date = now - timedelta(days=365)
-        if start_date:
-            return queryset.filter(viewed_at__gte=start_date)
-        return queryset
+        if time_range == "day":
+            start = now - timedelta(days=1)
+        elif time_range == "week":
+            start = now - timedelta(days=7)
+        elif time_range == "month":
+            start = now - timedelta(days=30)
+        elif time_range == "year":
+            start = now - timedelta(days=365)
+        else:
+            return queryset
 
+        return queryset.filter(viewed_at__gte=start)
+
+    # BLOG-VIEWS API
     @action(detail=False, methods=['get'], url_path='blog-views')
     def blog_views(self, request):
         """
-        object_type = country/user
-        x = grouping key, y = number_of_blogs, z = total views
+        - object_type = country / user
+        - x = grouping key
+        - y = number_of_blogs
+        - z = total_views
         """
         object_type = request.GET.get('object_type', 'country')
         time_range = request.GET.get('range', 'month')
         filters = request.GET.get("filters", None)
 
-        blogs = Blog.objects.select_related('author', 'country').prefetch_related('views')
+        # Base queryset
+        qs = BlogView.objects.select_related( "blog", "blog__author", "blog__country")
 
+        # Apply dynamic filters
         if filters:
-            blogs = apply_filters(blogs, filters)
+            qs = apply_filters(qs, filters)
 
-        blogs = self._apply_time_range(blogs, time_range)
+        # Apply time range
+        qs = self._apply_time_range(qs, time_range)
 
-        if object_type == 'country':
-            qs = blogs.values('country__name').annotate(
-                y=Count('id'),
-                z=Count('views')
+        # GROUPING
+        if object_type == "country":
+            qs = qs.values("blog__country__name").annotate(
+                number_of_blogs=Count("blog", distinct=True),
+                total_views=Count("id")
             )
-            data = [{"x": b["country__name"] or "Unknown", "y": b["y"], "z": b["z"]} for b in qs]
+            data = [{
+                "x": row["blog__country__name"] or "Unknown",
+                "y": row["number_of_blogs"],
+                "z": row["total_views"]
+            } for row in qs]
+
+        elif object_type == "user":
+            qs = qs.values("blog__author__username").annotate(
+                number_of_blogs=Count("blog", distinct=True),
+                total_views=Count("id")
+            )
+            data = [{
+                "x": row["blog__author__username"] or "Unknown",
+                "y": row["number_of_blogs"],
+                "z": row["total_views"]
+            } for row in qs]
+
         else:
-            qs = blogs.values('author__username').annotate(
-                y=Count('id'),
-                z=Count('views')
+            return Response(
+                {"error": "Invalid object_type. Use: country or user"},
+                status=400
             )
-            data = [{"x": b["author__username"] or "Unknown", "y": b["y"], "z": b["z"]} for b in qs]
 
         serializer = BlogViewsAnalyticsSerializer(data, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=200)
 
+    # TOP ANALYTICS API
     @action(detail=False, methods=['get'], url_path='top')
     def top(self, request):
         """
-        Returns Top 10 based on total views
+        Returns Top 10 (user / country / blogs) based on total views.
         """
         top_type = request.GET.get('top', 'user')
         time_range = request.GET.get('range', 'month')
         filters = request.GET.get("filters", None)
 
-        blogs = Blog.objects.select_related('author', 'country').prefetch_related('views')
+        qs = BlogView.objects.select_related("blog", "blog__author", "blog__country")
 
         if filters:
-            blogs = apply_filters(blogs, filters)
+            qs = apply_filters(qs, filters)
 
-        blogs = self._apply_time_range(blogs, time_range)
+        qs = self._apply_time_range(qs, time_range)
 
         if top_type == 'user':
-            qs = blogs.values('author__username').annotate(
-                y=Count('id'),
-                z=Count('views')
-            ).order_by('-z')[:10]
-            data = [{"x": b['author__username'], "y": b['y'], "z": b['z']} for b in qs]
+            data = [
+                {"x": row["blog__author__username"], "y": row["blogs_count"], "z": row["views_count"]}
+                for row in qs.values("blog__author__username")
+                .annotate(
+                    blogs_count=Count("blog", distinct=True),
+                    views_count=Count("id")
+                )
+                .order_by("-views_count")[:10]
+            ]
 
         elif top_type == 'country':
-            qs = blogs.values('country__name').annotate(
-                y=Count('id'),
-                z=Count('views')
-            ).order_by('-z')[:10]
-            data = [{"x": b['country__name'] or "Unknown", "y": b['y'], "z": b['z']} for b in qs]
+            data = [
+                {"x": row["blog__country__name"] or "Unknown", "y": row["blogs_count"], "z": row["views_count"]}
+                for row in qs.values("blog__country__name")
+                .annotate(
+                    blogs_count=Count("blog", distinct=True),
+                    views_count=Count("id")
+                )
+                .order_by("-views_count")[:10]
+            ]
 
         else:  # top blogs
-            qs = blogs.annotate(
-                y=1,  # each blog counts as 1
-                z=Count('views')
-            ).order_by('-z')[:10]
-            data = [{"x": b.title, "y": b.y, "z": b.z} for b in qs]
+            data = [
+                {"x": row["blog__title"], "y": 1, "z": row["views_count"]}
+                for row in qs.values("blog__title")
+                .annotate(views_count=Count("id"))
+                .order_by("-views_count")[:10]
+            ]
 
         serializer = TopAnalyticsSerializer(data, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=200)
 
+    # PERFORMANCE ANALYTICS API
     @action(detail=False, methods=["get"], url_path="performance")
     def performance(self, request):
         """
         x = period label
         y = total views
-        z = growth/decline % vs previous period
+        z = growth percentage
         """
-
-        compare = request.GET.get("compare", "month")  # day, week, month, year
+        compare = request.GET.get("compare", "month")  # day/week/month/year
         user_id = request.GET.get("user", None)
         filters = request.GET.get("filters", None)
 
-        # Base queryset
         qs = BlogView.objects.select_related("blog", "blog__author")
 
         if user_id:
@@ -120,7 +151,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         if filters:
             qs = apply_filters(qs, filters)
 
-        # trunc function
+        # Choose truncation
         if compare == "day":
             trunc = TruncDay("viewed_at")
             label_format = "%Y-%m-%d"
@@ -130,11 +161,11 @@ class AnalyticsViewSet(viewsets.ViewSet):
         elif compare == "year":
             trunc = TruncYear("viewed_at")
             label_format = "%Y"
-        else:  # month as default
+        else:  # default month
             trunc = TruncMonth("viewed_at")
             label_format = "%B %Y"
 
-        # Single-query total views per period
+        # Query views per period
         period_data = (
             qs.annotate(period=trunc)
             .values("period")
@@ -145,41 +176,24 @@ class AnalyticsViewSet(viewsets.ViewSet):
             .order_by("period")
         )
 
-        # Convert to dict
-        period_map = {
-            item["period"]: {
-                "views": item["views_count"],
-                "blogs": item["blogs_count"],
-            }
-            for item in period_data
-        }
-
-        # Build final dataset with growth %
-        periods = list(period_map.keys())
-        periods.sort()
-
+        # Build structured output
+        periods = list(period_data)
         output = []
-        for i, period in enumerate(periods):
-            current = period_map[period]
 
-            # previous period lookup
-            prev_views = (
-                period_map.get(periods[i - 1], {}).get("views", 0)
-                if i > 0 else 0
-            )
+        for i, p in enumerate(periods):
+            current_views = p["views_count"]
+            prev_views = periods[i - 1]["views_count"] if i > 0 else 0
 
-            # growth %
             if prev_views > 0:
-                growth = ((current["views"] - prev_views) / prev_views) * 100
+                growth = ((current_views - prev_views) / prev_views) * 100
             else:
-                growth = 100.0  # assume 100% when starting
+                growth = 100.0
 
             output.append({
-                "x": period.strftime(label_format) + f" ({current['blogs']} blogs)",
-                "y": current["views"],
+                "x": p["period"].strftime(label_format) + f" ({p['blogs_count']} blogs)",
+                "y": current_views,
                 "z": round(growth, 2),
             })
 
         serializer = PerformanceAnalyticsSerializer(output, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
+        return Response(serializer.data, status=200)
