@@ -78,7 +78,23 @@ Or manually configure settings.py.
 Step 5 — Apply Migrations
 python manage.py migrate
 
-Step 6 — Run Server
+Step 6 — Populate Sample Data
+
+To easily test analytics locally, you can populate the database with sample blogs, authors, countries, and blog views.
+
+Run the following command:
+
+python manage.py populate_sample_data
+
+This command will:
+
+Create random sample users, countries, blogs, and blog view records
+
+Automatically set timestamps across days, weeks, and months
+
+Ensure analytics endpoints return rich datasets for testing
+
+Step 7 — Run Server
 python manage.py runserver
 
 API Endpoints
