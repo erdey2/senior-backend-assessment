@@ -1,52 +1,73 @@
-from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Count, F, Window
+from django.utils import timezone
+from django.db.models import Count, F, Value
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiExample
 
 from ..models import BlogView
-from .serializers import (
-    BlogViewsAnalyticsSerializer,
-    TopAnalyticsSerializer,
-    PerformanceAnalyticsSerializer,
-)
-from .filters import BlogViewFilter  # We'll create this with django-filter
+from .serializers import BlogViewsAnalyticsSerializer, TopAnalyticsSerializer, PerformanceAnalyticsSerializer
+from .filters import BlogViewFilter
 
 
 @extend_schema_view(
     blog_views=extend_schema(
         tags=["Analytics"],
         summary="Blog views grouped by viewer country or viewer user",
+        description="Group by viewer country or viewer user. Returns list of {x, y, z}.",
         parameters=[
-            OpenApiParameter(name='object_type', type=str, enum=['country', 'user'], default='country'),
-            OpenApiParameter(name='range', type=str, enum=['day', 'week', 'month', 'year']),
+            OpenApiParameter(name='object_type', description="country | user", required=False, type=str, enum=['country','user'], default='country'),
+            OpenApiParameter(name='range', description="day | week | month | year", required=False, type=str, enum=['day','week','month','year'], default='month'),
+            OpenApiParameter(name='viewer_country', description="Filter by viewer country code (e.g. ET)", required=False),
+            OpenApiParameter(name='blog_country', description="Filter by blog country code (e.g. ET)", required=False),
+            OpenApiParameter(name='blog_author', description="Filter by blog author id", required=False),
+            OpenApiParameter(name='user', description="Filter by viewer user id", required=False),
+            OpenApiParameter(name='viewed_at_gte', description="ISO datetime lower bound", required=False),
+            OpenApiParameter(name='viewed_at_lte', description="ISO datetime upper bound", required=False),
         ],
-        responses=BlogViewsAnalyticsSerializer(many=True)
+        responses=BlogViewsAnalyticsSerializer(many=True),
+        examples=[
+            OpenApiExample(
+                "By country example",
+                value=[{"x":"Ethiopia","y":12,"z":1200},{"x":"Kenya","y":5,"z":420}],
+                response_only=True
+            )
+        ]
     ),
     top=extend_schema(
         tags=["Analytics"],
-        summary="Top 10 viewers by country, user or blogs viewed",
+        summary="Top 10 by user / country / blog (by total views)",
         parameters=[
-            OpenApiParameter(name='top', type=str, enum=['user', 'country', 'blog'], default='user'),
-            OpenApiParameter(name='range', type=str, enum=['day', 'week', 'month', 'year']),
+            OpenApiParameter(name='top', description="user | country | blog", required=False, type=str, enum=['user','country','blog'], default='user'),
+            OpenApiParameter(name='range', description="day | week | month | year", required=False, type=str, enum=['day','week','month','year'], default='month'),
         ],
-        responses=TopAnalyticsSerializer(many=True)
+        responses=TopAnalyticsSerializer(many=True),
+        examples=[
+            OpenApiExample("Top users sample", value=[{"x":"alice","y":5,"z":520}], response_only=True)
+        ]
     ),
     performance=extend_schema(
         tags=["Analytics"],
-        summary="Performance trend with growth % (calculated in DB)",
+        summary="Performance trend per period with growth %",
         parameters=[
-            OpenApiParameter(name='compare', type=str, enum=['day', 'week', 'month', 'year'], default='month'),
-            OpenApiParameter(name='user', type=int, description="Filter by blog author ID"),
+            OpenApiParameter(name='compare', description="day | week | month | year", required=False, type=str, enum=['day','week','month','year'], default='month'),
+            OpenApiParameter(name='user', description="Filter by blog author id", required=False),
         ],
-        responses=PerformanceAnalyticsSerializer(many=True)
+        responses=PerformanceAnalyticsSerializer(many=True),
+        examples=[
+            OpenApiExample("Monthly perf sample", value=[{"x":"2025-10-01 (5 blogs)","y":120,"z":10.0}], response_only=True)
+        ]
     ),
 )
 class AnalyticsViewSet(viewsets.ViewSet):
-    # Proper time range filtering
+    """
+    Analytics endpoints:
+    - /analytics/blog-views/?object_type=country&range=month
+    - /analytics/top/?top=user&range=month
+    - /analytics/performance/?compare=month&user=1
+    """
     def _apply_time_range(self, queryset, time_range):
         now = timezone.now()
         ranges = {
@@ -60,70 +81,75 @@ class AnalyticsViewSet(viewsets.ViewSet):
             return queryset.filter(viewed_at__gte=now - delta)
         return queryset
 
+    # blog-views
     @action(detail=False, methods=['get'], url_path='blog-views')
     def blog_views(self, request):
         object_type = request.query_params.get('object_type', 'country')
         time_range = request.query_params.get('range', 'month')
 
-        qs = BlogView.objects.filter(blog__isnull=False)
+        # base queryset to protect from n+1 queries
+        qs = BlogView.objects.select_related('blog', 'blog__author', 'blog__country', 'viewer_country', 'user').filter(blog__isnull=False)
 
-        # Use proper django-filter (see below)
+        # apply filtering
         qs = BlogViewFilter(request.query_params, queryset=qs).qs
+
+        # apply time range
         qs = self._apply_time_range(qs, time_range)
 
-        if object_type == "country":
-            qs = qs.values(name=F("viewer_country__name")) \
+        # grouping + aggregation (single-query)
+        if object_type == 'country':
+            agg_qs = qs.values(name=F('viewer_country__name')) \
                 .annotate(
-                    unique_blogs=Count("blog", distinct=True),
-                    total_views=Count("id")
-                )
-        elif object_type == "user":
-            qs = qs.exclude(user__isnull=True) \
-                .values(name=F("user__username")) \
+                    y=Count('blog', distinct=True),  # number_of_blogs
+                    z=Count('id')  # total_views
+                ).order_by('-z')
+        elif object_type == 'user':
+            agg_qs = qs.exclude(user__isnull=True).values(name=F('user__username')) \
                 .annotate(
-                    unique_blogs=Count("blog", distinct=True),
-                    total_views=Count("id")
-                )
+                    y=Count('blog', distinct=True),
+                    z=Count('id')
+                ).order_by('-z')
         else:
-            return Response({"error": "Invalid object_type. Use 'country' or 'user'"}, status=400)
+            return Response({"error": "Invalid object_type. Use 'country' or 'user'."}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = BlogViewsAnalyticsSerializer(qs, many=True)
-        return Response(serializer.data)
+        result = [{"x": row.get("name") or "Unknown", "y": row.get("y", 0), "z": row.get("z", 0)} for row in agg_qs]
+        serializer = BlogViewsAnalyticsSerializer(result, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
+    # top views
     @action(detail=False, methods=['get'], url_path='top')
     def top(self, request):
         top_type = request.query_params.get('top', 'user')
         time_range = request.query_params.get('range', 'month')
 
-        qs = BlogView.objects.filter(blog__isnull=False)
+        qs = BlogView.objects.select_related('blog', 'blog__author', 'blog__country', 'viewer_country', 'user').filter(blog__isnull=False)
         qs = BlogViewFilter(request.query_params, queryset=qs).qs
         qs = self._apply_time_range(qs, time_range)
 
-        if top_type == "user":
-            qs = qs.exclude(user__isnull=True) \
-                .values(name=F("user__username")) \
-                .annotate(total_views=Count("id")) \
-                .order_by("-total_views")[:10]
-        elif top_type == "country":
-            qs = qs.values(name=F("viewer_country__name")) \
-                .annotate(total_views=Count("id")) \
-                .order_by("-total_views")[:10]
-        elif top_type == "blog":
-            qs = qs.values(name=F("blog__title")) \
-                .annotate(total_views=Count("id")) \
-                .order_by("-total_views")[:10]
+        if top_type == 'user':
+            agg_qs = qs.exclude(user__isnull=True).values(name=F('user__username')) \
+                .annotate(y=Count('blog', distinct=True), z=Count('id')).order_by('-z')[:10]
+            # y = number of blogs (unique), z = total views
+        elif top_type == 'country':
+            agg_qs = qs.values(name=F('viewer_country__name')) \
+                .annotate(y=Count('blog', distinct=True), z=Count('id')).order_by('-z')[:10]
+        elif top_type == 'blog':
+            agg_qs = qs.values(name=F('blog__title')) \
+                .annotate(y=Value(1), z=Count('id')).order_by('-z')[:10]
         else:
-            return Response({"error": "Invalid top type"}, status=400)
+            return Response({"error": "Invalid top type. Use 'user', 'country', or 'blog'."}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = TopAnalyticsSerializer(qs, many=True)
-        return Response(serializer.data)
+        result = [{"x": row.get("name") or "Unknown", "y": int(row.get("y", 0)), "z": int(row.get("z", 0))} for row in agg_qs]
+        serializer = TopAnalyticsSerializer(result, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-    @action(detail=False, methods=["get"], url_path="performance")
+    # performance views
+    @action(detail=False, methods=['get'], url_path='performance')
     def performance(self, request):
-        compare = request.query_params.get("compare", "month")
-        user_id = request.query_params.get("user")
+        compare = request.query_params.get('compare', 'month')
+        user_id = request.query_params.get('user')
 
-        qs = BlogView.objects.filter(blog__isnull=False)
+        qs = BlogView.objects.select_related('blog', 'blog__author').filter(blog__isnull=False)
         if user_id:
             qs = qs.filter(blog__author_id=user_id)
 
@@ -137,29 +163,30 @@ class AnalyticsViewSet(viewsets.ViewSet):
         }
         trunc = trunc_map.get(compare, TruncMonth("viewed_at"))
 
-        annotated = qs.annotate(period=trunc) \
-            .values("period") \
-            .annotate(
-                views=Count("id"),
-                unique_blogs=Count("blog", distinct=True),
-                prev_views=Window(
-                    Lag("views", default=0),
-                    order_by=F("period").asc()
-                )
-            ).values("period", "views", "unique_blogs", "prev_views") \
-            .order_by("period")
+        # aggregate per period (single DB query)
+        period_qs = (
+            qs.annotate(period=trunc)
+              .values("period")
+              .annotate(
+                  views=Count("id"),
+                  blogs_count=Count("blog", distinct=True),
+              )
+              .order_by("period")
+        )
 
+        # compute growth %
         results = []
-        for item in annotated:
-            current = item["views"]
-            prev = item["prev_views"]
-            growth = round(((current - prev) / prev * 100), 2) if prev > 0 else None
+        prev_views = None
+        for row in period_qs:
+            views = int(row["views"])
+            blogs_count = int(row["blogs_count"])
+            if prev_views is None or prev_views == 0:
+                growth = None
+            else:
+                growth = round(((views - prev_views) / prev_views) * 100.0, 2)
+            label = row["period"].strftime("%Y-%m-%d") + f" ({blogs_count} blogs)"
+            results.append({"x": label, "y": views, "z": growth, "blogs_count": blogs_count})
+            prev_views = views
 
-            results.append({
-                "x": item["period"].strftime('%Y-%m-%d'),
-                "y": current,
-                "z": growth,
-                "blogs_count": item["unique_blogs"]
-            })
-
-        return Response(PerformanceAnalyticsSerializer(results, many=True).data)
+        serializer = PerformanceAnalyticsSerializer(results, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
