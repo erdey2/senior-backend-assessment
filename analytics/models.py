@@ -12,8 +12,22 @@ class Blog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True, related_name='blogs')  # Blog's country
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['author', 'created_at']),
+            models.Index(fields=['country', 'created_at']),
+        ]
+
 class BlogView(models.Model):
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='views')
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='blog_views')
     viewer_country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True)
     viewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['viewed_at']),
+            models.Index(fields=['viewer_country']),
+            models.Index(fields=['user']),
+            models.Index(fields=['blog', 'viewed_at']),  # for time filtering
+        ]

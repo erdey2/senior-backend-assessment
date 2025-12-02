@@ -1,7 +1,7 @@
 from datetime import timedelta
 from django.utils import timezone
-from django.db.models import Count, F, Value
-from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear
+from django.db.models import Count, F, Value, Window, Case, When, ExpressionWrapper, FloatField, CharField
+from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear, Coalesce, Concat, Lag, ExtractYear, ExtractMonth, ExtractDay
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -87,34 +87,36 @@ class AnalyticsViewSet(viewsets.ViewSet):
         object_type = request.query_params.get('object_type', 'country')
         time_range = request.query_params.get('range', 'month')
 
-        # base queryset to protect from n+1 queries
-        qs = BlogView.objects.select_related('blog', 'blog__author', 'blog__country', 'viewer_country', 'user').filter(blog__isnull=False)
+        qs = BlogView.objects.select_related(
+            'blog', 'blog__author', 'blog__country', 'viewer_country', 'user'
+        ).filter(blog__isnull=False)
 
-        # apply filtering
         qs = BlogViewFilter(request.query_params, queryset=qs).qs
-
-        # apply time range
         qs = self._apply_time_range(qs, time_range)
 
-        # grouping + aggregation (single-query)
         if object_type == 'country':
-            agg_qs = qs.values(name=F('viewer_country__name')) \
-                .annotate(
-                    y=Count('blog', distinct=True),  # number_of_blogs
-                    z=Count('id')  # total_views
-                ).order_by('-z')
-        elif object_type == 'user':
-            agg_qs = qs.exclude(user__isnull=True).values(name=F('user__username')) \
-                .annotate(
-                    y=Count('blog', distinct=True),
-                    z=Count('id')
-                ).order_by('-z')
-        else:
-            return Response({"error": "Invalid object_type. Use 'country' or 'user'."}, status=status.HTTP_400_BAD_REQUEST)
+            data = qs.values(
+                x=Coalesce(F('viewer_country__name'), Value('Unknown'))
+            ).annotate(
+                y=Count('blog', distinct=True),
+                z=Count('id')
+            ).order_by('-z').values('x', 'y', 'z')
 
-        result = [{"x": row.get("name") or "Unknown", "y": row.get("y", 0), "z": row.get("z", 0)} for row in agg_qs]
-        serializer = BlogViewsAnalyticsSerializer(result, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        elif object_type == 'user':
+            data = qs.exclude(user__isnull=True).values(
+                x=F('user__username')
+            ).annotate(
+                y=Count('blog', distinct=True),
+                z=Count('id')
+            ).order_by('-z').values('x', 'y', 'z')
+
+        else:
+            return Response(
+                {"error": "Invalid object_type. Use 'country' or 'user'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response(list(data))
 
     # top views
     @action(detail=False, methods=['get'], url_path='top')
@@ -122,26 +124,55 @@ class AnalyticsViewSet(viewsets.ViewSet):
         top_type = request.query_params.get('top', 'user')
         time_range = request.query_params.get('range', 'month')
 
-        qs = BlogView.objects.select_related('blog', 'blog__author', 'blog__country', 'viewer_country', 'user').filter(blog__isnull=False)
+        # Base queryset with necessary joins
+        qs = BlogView.objects.select_related(
+            'blog', 'blog__author', 'blog__country', 'viewer_country', 'user'
+        ).filter(blog__isnull=False)
+
+        # Apply filters + time range
         qs = BlogViewFilter(request.query_params, queryset=qs).qs
         qs = self._apply_time_range(qs, time_range)
 
         if top_type == 'user':
-            agg_qs = qs.exclude(user__isnull=True).values(name=F('user__username')) \
-                .annotate(y=Count('blog', distinct=True), z=Count('id')).order_by('-z')[:10]
-            # y = number of blogs (unique), z = total views
-        elif top_type == 'country':
-            agg_qs = qs.values(name=F('viewer_country__name')) \
-                .annotate(y=Count('blog', distinct=True), z=Count('id')).order_by('-z')[:10]
-        elif top_type == 'blog':
-            agg_qs = qs.values(name=F('blog__title')) \
-                .annotate(y=Value(1), z=Count('id')).order_by('-z')[:10]
-        else:
-            return Response({"error": "Invalid top type. Use 'user', 'country', or 'blog'."}, status=status.HTTP_400_BAD_REQUEST)
+            data = (
+                qs.exclude(user__isnull=True)
+                .values(x=F('user__username'))
+                .annotate(
+                    y=Count('blog', distinct=True),  # unique blogs read
+                    z=Count('id')  # total views
+                )
+                .order_by('-z')[:10]
+                .values('x', 'y', 'z')
+            )
 
-        result = [{"x": row.get("name") or "Unknown", "y": int(row.get("y", 0)), "z": int(row.get("z", 0))} for row in agg_qs]
-        serializer = TopAnalyticsSerializer(result, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        elif top_type == 'country':
+            data = (
+                qs.values(x=Coalesce(F('viewer_country__name'), Value('Unknown')))
+                .annotate(
+                    y=Count('blog', distinct=True),
+                    z=Count('id')
+                )
+                .order_by('-z')[:10]
+                .values('x', 'y', 'z')
+            )
+
+        elif top_type == 'blog':
+            data = (
+                qs.values(x=F('blog__title'))
+                .annotate(
+                    y=Value(1),
+                    z=Count('id')
+                )
+                .order_by('-z')[:10]
+                .values('x', 'y', 'z')
+            )
+
+        else:
+            return Response(
+                {"error": "Invalid top type. Use 'user', 'country', or 'blog'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(list(data))
 
     # performance views
     @action(detail=False, methods=['get'], url_path='performance')
@@ -150,43 +181,41 @@ class AnalyticsViewSet(viewsets.ViewSet):
         user_id = request.query_params.get('user')
 
         qs = BlogView.objects.select_related('blog', 'blog__author').filter(blog__isnull=False)
+
         if user_id:
             qs = qs.filter(blog__author_id=user_id)
 
         qs = BlogViewFilter(request.query_params, queryset=qs).qs
 
-        trunc_map = {
-            "day": TruncDay("viewed_at"),
-            "week": TruncWeek("viewed_at"),
-            "month": TruncMonth("viewed_at"),
-            "year": TruncYear("viewed_at"),
-        }
-        trunc = trunc_map.get(compare, TruncMonth("viewed_at"))
+        trunc_map = {'day': TruncDay, 'week': TruncWeek, 'month': TruncMonth, 'year': TruncYear}
+        trunc_func = trunc_map.get(compare, TruncMonth)
 
-        # aggregate per period (single DB query)
-        period_qs = (
-            qs.annotate(period=trunc)
-              .values("period")
-              .annotate(
-                  views=Count("id"),
-                  blogs_count=Count("blog", distinct=True),
-              )
-              .order_by("period")
+        data = (
+            qs.annotate(period=trunc_func('viewed_at'))
+            .values('period')
+            .annotate(
+                y=Count('id'),
+                blogs_count=Count('blog', distinct=True),
+                prev_y=Window(Lag(Count('id'), default=0), order_by=F('period').asc())
+            )
+            .annotate(
+                z=Case(
+                    When(prev_y=0, then=Value(None)),
+                    default=ExpressionWrapper(
+                        Round((F('y') - F('prev_y')) * 100.0 / F('prev_y'), 2),
+                        output_field=FloatField()
+                    )
+                ),
+                x=Concat(
+                    ExtractYear('period'), Value('-'),
+                    ExtractMonth('period'), Value('-'),
+                    ExtractDay('period'), Value(' ('),
+                    F('blogs_count'), Value(' blogs)'),
+                    output_field=CharField()
+                )
+            )
+            .order_by('period')
+            .values('x', 'y', 'z')
         )
 
-        # compute growth %
-        results = []
-        prev_views = None
-        for row in period_qs:
-            views = int(row["views"])
-            blogs_count = int(row["blogs_count"])
-            if prev_views is None or prev_views == 0:
-                growth = None
-            else:
-                growth = round(((views - prev_views) / prev_views) * 100.0, 2)
-            label = row["period"].strftime("%Y-%m-%d") + f" ({blogs_count} blogs)"
-            results.append({"x": label, "y": views, "z": growth, "blogs_count": blogs_count})
-            prev_views = views
-
-        serializer = PerformanceAnalyticsSerializer(results, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(list(data))
