@@ -14,5 +14,6 @@ class Blog(models.Model):
 
 class BlogView(models.Model):
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='views')
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='blog_views')
     viewer_country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True)
     viewed_at = models.DateTimeField(auto_now_add=True)
