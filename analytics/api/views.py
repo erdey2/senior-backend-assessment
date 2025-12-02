@@ -1,7 +1,8 @@
 from datetime import timedelta
 from django.utils import timezone
-from django.db.models import Count, F, Value, Window, Case, When, ExpressionWrapper, FloatField, CharField
-from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear, Coalesce, Concat, Lag, ExtractYear, ExtractMonth, ExtractDay
+from django.db.models import Count, F, Value, Window, Case, When, ExpressionWrapper, FloatField, CharField, Func
+from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear, Coalesce, Concat, ExtractYear, ExtractMonth, ExtractDay, Round
+from django.db.models.functions import Lag
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -175,47 +176,51 @@ class AnalyticsViewSet(viewsets.ViewSet):
         return Response(list(data))
 
     # performance views
-    @action(detail=False, methods=['get'], url_path='performance')
+    @action(detail=False, methods=["get"], url_path="performance")
     def performance(self, request):
         compare = request.query_params.get('compare', 'month')
         user_id = request.query_params.get('user')
 
         qs = BlogView.objects.select_related('blog', 'blog__author').filter(blog__isnull=False)
-
         if user_id:
             qs = qs.filter(blog__author_id=user_id)
 
         qs = BlogViewFilter(request.query_params, queryset=qs).qs
 
-        trunc_map = {'day': TruncDay, 'week': TruncWeek, 'month': TruncMonth, 'year': TruncYear}
-        trunc_func = trunc_map.get(compare, TruncMonth)
+        trunc_map = {
+            "day": TruncDay("viewed_at"),
+            "week": TruncWeek("viewed_at"),
+            "month": TruncMonth("viewed_at"),
+            "year": TruncYear("viewed_at"),
+        }
+        trunc = trunc_map.get(compare, TruncMonth("viewed_at"))
 
-        data = (
-            qs.annotate(period=trunc_func('viewed_at'))
-            .values('period')
+        period_qs = (
+            qs.annotate(period=trunc)
+            .values("period")
             .annotate(
-                y=Count('id'),
-                blogs_count=Count('blog', distinct=True),
-                prev_y=Window(Lag(Count('id'), default=0), order_by=F('period').asc())
+                views=Count("id"),
+                blogs_count=Count("blog", distinct=True),
             )
-            .annotate(
-                z=Case(
-                    When(prev_y=0, then=Value(None)),
-                    default=ExpressionWrapper(
-                        Round((F('y') - F('prev_y')) * 100.0 / F('prev_y'), 2),
-                        output_field=FloatField()
-                    )
-                ),
-                x=Concat(
-                    ExtractYear('period'), Value('-'),
-                    ExtractMonth('period'), Value('-'),
-                    ExtractDay('period'), Value(' ('),
-                    F('blogs_count'), Value(' blogs)'),
-                    output_field=CharField()
-                )
-            )
-            .order_by('period')
-            .values('x', 'y', 'z')
+            .order_by("period")
         )
 
-        return Response(list(data))
+        results = []
+        prev_views = None
+        for row in period_qs:
+            views = row["views"]
+            blogs_count = row["blogs_count"]
+            growth = None if prev_views in (None, 0) else round((views - prev_views) / prev_views * 100, 2)
+            results.append({
+                "x": row["period"].strftime("%Y-%m-%d") + f" ({blogs_count} blogs)",
+                "y": views,
+                "z": growth,
+                "blogs_count": blogs_count
+            })
+            prev_views = views
+
+        return Response(results)
+
+
+
+
