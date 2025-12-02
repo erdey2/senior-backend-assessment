@@ -1,70 +1,135 @@
 Blog Analytics API
-
-A high-performance Django REST Framework analytics system for blog applications.
-It provides aggregated insights based on blog views, authors, and countries, with single-query optimized performance and flexible filtering capabilities.
+A high-performance analytics system built with Django REST Framework, optimized for large-scale blog platforms.
 
 Overview
+This API exposes three core analytics endpoints:
 
-This API exposes three major analytics endpoints:
+1. Blog Views Analytics
 
-Blog Views Analytics – grouped by country or user
+Grouped analysis by country or user, with:
 
-Top Analytics – top 10 authors, countries, or blogs by views
+Total views
 
-Performance Analytics – time-series performance with growth percentage
+Number of unique blogs viewed
 
-The system is optimized to avoid N+1 queries and supports dynamic filtering with multiple operators.
+Full dynamic filtering
+
+Time-range filtering (day/week/month/year)
+
+2. Top Analytics
+
+Top 10:
+
+Authors
+
+Countries
+
+Blogs
+Ranked by total views.
+
+3. Performance Analytics
+
+Time-series performance showing:
+
+Blog count per period
+
+Total views
+
+Growth/decline percentages
+
+Supports:
+
+Day
+
+Week
+
+Month
+
+Year
 
 Features
 
-Optimized single-query aggregation
+✔ Optimized single-query ORM aggregation
+✔ Zero N+1 queries
+✔ Full dynamic filtering via django-filter
+✔ Time ranges: day | week | month | year
+✔ Growth/decline computation per period
+✔ Clean ViewSet-based architecture
+✔ DRF Spectacular-powered API documentation
+✔ Deployed online for public testing
 
-Dynamic filters for advanced querying
+Live API (Deployed)
 
-Time-range support: day, week, month, year
-
-Growth and decline percentage calculations
-
-Clean DRF ViewSet-based structure
-
-Test Deployed API
-
-The deployed API is available here:
+Base URL:
 https://blog-analysis.onrender.com/analytics/
 
-Example requests:
+API Docs:
+https://blog-analysis.onrender.com/api/docs/
 
-Blog Views Analytics
+Example API Requests
+1. Blog Views Analytics
+
+Group by user for the last month:
 curl -X GET "https://blog-analysis.onrender.com/analytics/blog-views/?object_type=user&range=month"
 
-Top Analytics
+Group by country for the last 7 days:
+curl -X GET "https://blog-analysis.onrender.com/analytics/blog-views/?object_type=country&range=week"
+
+With filters (viewer country = Ethiopia):
+curl -X GET "https://blog-analysis.onrender.com/analytics/blog-views/?viewer_country=ET&range=month"
+
+2. Top Analytics
+
+Top 10 users by views:
 curl -X GET "https://blog-analysis.onrender.com/analytics/top/?top=user&range=month"
 
-Performance Analytics
+Top 10 countries:
+curl -X GET "https://blog-analysis.onrender.com/analytics/top/?top=country&range=week"
+
+Top 10 blogs:
+curl -X GET "https://blog-analysis.onrender.com/analytics/top/?top=blog&range=month"
+
+3. Performance Analytics
+Monthly performance:
 curl -X GET "https://blog-analysis.onrender.com/analytics/performance/?compare=month"
 
+Performance for a specific author:
+curl -X GET "https://blog-analysis.onrender.com/analytics/performance/?compare=week&user=3"
 
-Dynamic filters can be applied using the filters query parameter:
+Dynamic Filtering
+Supported query parameters include:
 
-curl -X GET "https://blog-analysis.onrender.com/analytics/blog-views/?filters={'blog__country__name':'Ethiopia'}"
+Parameter	Description
+viewer_country	Filter by viewer country code
+blog_country	Filter by blog country code
+blog_author	Filter by author id
+user	Filter by viewer user id
+viewed_at_gte	Filter by start datetime
+viewed_at_lte	Filter by end datetime
 
-Installation Guide (Local)
+Example:
+curl -X GET "https://blog-analysis.onrender.com/analytics/blog-views/?viewer_country=ET&viewed_at_gte=2025-10-01T00:00:00"
 
-Follow these steps to run the project locally.
+Installation & Setup (Local)
 
-Step 1 — Clone the Repository
+Follow these steps to run the analytics system locally.
+
+Step 1 — Clone Repository
 git clone https://github.com/erdey2/blog-analytics-api.git
 cd blog-analytics-api
 
 Step 2 — Create Virtual Environment
+Linux/macOS:
 python3 -m venv env
-source env/bin/activate        # Linux/macOS
-env\Scripts\activate           # Windows
+source env/bin/activate
+
+Windows:
+env\Scripts\activate
 
 Step 3 — Install Dependencies
 pip install -r requirements.txt
 
-Step 4 — Configure Environment Variables
+Step 4 — Configure Environment
 
 Create a .env file:
 
@@ -72,62 +137,39 @@ SECRET_KEY=your-secret-key
 DEBUG=True
 DATABASE_URL=postgres://username:password@localhost:5432/blogdb
 
-
-Or manually configure settings.py.
+Or update settings.py manually.
 
 Step 5 — Apply Migrations
 python manage.py migrate
 
 Step 6 — Populate Sample Data
 
-To easily test analytics locally, you can populate the database with sample blogs, authors, countries, and blog views.
-
-Run the following command:
+Run:
 
 python manage.py populate_sample_data
 
-This command will:
 
-Create random sample users, countries, blogs, and blog view records
+This will generate:
 
-Automatically set timestamps across days, weeks, and months
+Users
 
-Ensure analytics endpoints return rich datasets for testing
+Countries
+
+Blogs
+
+Blog view records
+
+Useful for testing analytics without needing real traffic.
 
 Step 7 — Run Server
 python manage.py runserver
 
-API Endpoints
 
-All analytics endpoints are served under the /analytics/ route.
+Server runs at:
+http://127.0.0.1:8000/
 
-1. Blog Views Analytics
-
-Aggregated blog and view counts grouped by a specified object type (country or user).
-
-2. Top Analytics
-
-Returns top 10 records ranked by view count, grouped by user, country, or individual blog.
-
-3. Performance Analytics
-
-Returns time-series performance data including:
-
-Blog count
-
-Total views
-
-Growth percentage between periods
-
-Dynamic Filters
-
-Supports dynamic filter rules.
-Supported operators: eq, neq, in, nin, gt, lt
-
-Filter format:
-
-{
-  "field": "blog__author__username",
-  "operator": "eq",
-  "value": "user1"
-}
+API Endpoints Overview
+Endpoint	Description
+/analytics/blog-views/	Views grouped by country or user
+/analytics/top/	Top 10 by views (users, countries, blogs)
+/analytics/performance/	Time-series analytics with growth %
