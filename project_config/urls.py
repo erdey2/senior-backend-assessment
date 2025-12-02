@@ -9,7 +9,7 @@ urlpatterns = [
     path("analytics/", include("analytics.api.urls")),
 
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema')),
+    path('', SpectacularSwaggerView.as_view(url_name='schema')),
     path('api/docs/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
 

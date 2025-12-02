@@ -41,6 +41,21 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Blog Platform API',
+    'DESCRIPTION': 'High-performance analytics for blog engagement',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'ENUM_NAME_OVERRIDES': {
+        'RangeEnum': ['day', 'week', 'month', 'year'],
+        'TopTypeEnum': ['user', 'country', 'blog'],
+    },
+    'PREPROCESSING_HOOKS': [
+        'drf_spectacular.hooks.preprocess_exclude_path_format'
+    ],
+}
+
 # Templates
 TEMPLATES = [
     {
