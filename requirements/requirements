@@ -2,7 +2,6 @@ asgiref==3.11.0
 attrs==25.4.0
 dj-database-url==3.0.1
 Django==5.2.8
-django-debug-toolbar==6.1.0
 django-filter==25.2
 djangorestframework==3.16.1
 drf-spectacular==0.29.0

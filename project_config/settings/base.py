@@ -20,9 +20,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'drf_spectacular',
-    "debug_toolbar",
     'analytics',
 ]
+if DEBUG:
+    INSTALLED_APPS += ["debug_toolbar"]
 
 # Middleware
 MIDDLEWARE = [
@@ -32,9 +33,10 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    "debug_toolbar.middleware.DebugToolbarMiddleware",
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+if DEBUG:
+    MIDDLEWARE.insert(0, "debug_toolbar.middleware.DebugToolbarMiddleware")
 
 # URLs
 ROOT_URLCONF = 'project_config.urls'
@@ -58,9 +60,8 @@ SPECTACULAR_SETTINGS = {
     ],
 }
 
-INTERNAL_IPS = [
-    "127.0.0.1",
-]
+if DEBUG:
+    INTERNAL_IPS = ["127.0.0.1"]
 
 # Templates
 TEMPLATES = [
