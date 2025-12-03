@@ -1,8 +1,8 @@
 from datetime import timedelta
 from django.utils import timezone
-from django.db.models import Count, F, Value, Window, Case, When, ExpressionWrapper, FloatField, CharField, Func
-from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear, Coalesce, Concat, ExtractYear, ExtractMonth, ExtractDay, Round
-from django.db.models.functions import Lag
+from django.db.models import Count, F, Value
+from django.db.models.functions import Coalesce, TruncDay, TruncWeek, TruncMonth, TruncYear
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -178,25 +178,26 @@ class AnalyticsViewSet(viewsets.ViewSet):
     # performance views
     @action(detail=False, methods=["get"], url_path="performance")
     def performance(self, request):
-        compare = request.query_params.get('compare', 'month')
-        user_id = request.query_params.get('user')
+        # Parameters
+        compare = request.GET.get("compare", "month")  # month/week/day/year
+        user_id = request.GET.get("user")
 
+        # Base queryset with dynamic filters
         qs = BlogView.objects.select_related('blog', 'blog__author').filter(blog__isnull=False)
+
         if user_id:
             qs = qs.filter(blog__author_id=user_id)
 
+        # Apply any additional dynamic filters
         qs = BlogViewFilter(request.query_params, queryset=qs).qs
 
-        trunc_map = {
-            "day": TruncDay("viewed_at"),
-            "week": TruncWeek("viewed_at"),
-            "month": TruncMonth("viewed_at"),
-            "year": TruncYear("viewed_at"),
-        }
-        trunc = trunc_map.get(compare, TruncMonth("viewed_at"))
+        # Time trunc mapping
+        trunc_map = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth, "year": TruncYear }
+        trunc_fn = trunc_map.get(compare, TruncMonth)
 
+        # Aggregate by period (ONE QUERY)
         period_qs = (
-            qs.annotate(period=trunc)
+            qs.annotate(period=trunc_fn("viewed_at"))
             .values("period")
             .annotate(
                 views=Count("id"),
@@ -205,21 +206,29 @@ class AnalyticsViewSet(viewsets.ViewSet):
             .order_by("period")
         )
 
-        results = []
+        period_list = list(period_qs)  # Execute query once
+
+        # Compute previous period values (growth)
         prev_views = None
-        for row in period_qs:
+        prev_blogs = None
+        results = []
+
+        for row in period_list:
             views = row["views"]
             blogs_count = row["blogs_count"]
-            growth = None if prev_views in (None, 0) else round((views - prev_views) / prev_views * 100, 2)
+
+            growth_views = None if prev_views in (None, 0) else round((views - prev_views) / prev_views * 100, 2)
+            growth_blogs = None if prev_blogs in (None, 0) else round((blogs_count - prev_blogs) / prev_blogs * 100, 2)
+
+            # Format x/y/z
             results.append({
-                "x": row["period"].strftime("%Y-%m-%d") + f" ({blogs_count} blogs)",
-                "y": views,
-                "z": growth,
-                "blogs_count": blogs_count
+                "x": row["period"].strftime("%Y-%m-%d"),  # period label
+                "y": blogs_count,  # number of blogs
+                "z": views,  # total views
             })
-            prev_views = views
 
         return Response(results)
+
 
 
 
