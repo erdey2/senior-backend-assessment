@@ -60,11 +60,11 @@ Features
 
 Live API (Deployed)
 
-Base URL:
-https://blog-analysis.onrender.com/analytics/
-
 API Docs:
-https://blog-analysis.onrender.com/api/docs/
+https://blog-analysis.onrender.com/
+
+Analytics Base URL:
+https://blog-analysis.onrender.com/analytics/
 
 Example API Requests
 1. Blog Views Analytics

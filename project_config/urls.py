@@ -1,12 +1,15 @@
 from django.contrib import admin
 from django.urls import path, include
-from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from django.conf import settings
+from django.views.generic import RedirectView
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
 
     # API routes
+    path('', RedirectView.as_view(url='/api/docs/', permanent=False)),
     path("analytics/", include("analytics.api.urls")),
 
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
